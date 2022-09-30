@@ -139,7 +139,7 @@ class RefreshTokenGrant extends AbstractGrant
                 'client_id' => $foundToken->getClient()->getId() . '_' . $foundToken->getClient()->getRandomId(),
                 'refresh_token_id' => $foundToken->getId(),
                 'scopes' => ['ROLE_USER'],
-                'user_id' => $foundToken->getUser()->getId()
+                'user_id' => $foundToken->getUser()->getUserIdentifier()
             ];
         } else {
             // Validate refresh token
