@@ -4,16 +4,31 @@ declare(strict_types=1);
 
 namespace League\Bundle\OAuth2ServerBundle\Security\Authenticator;
 
+use _PHPStan_3bfe2e67c\Nette\Neon\Exception;
+use Firebase\JWT\JWT;
+use Lcobucci\Clock\SystemClock;
+use Lcobucci\JWT\Configuration;
+use Lcobucci\JWT\Signer\Key\InMemory;
+use Lcobucci\JWT\Signer\Rsa\Sha256;
+use Lcobucci\JWT\Validation\Constraint\SignedWith;
+use Lcobucci\JWT\Validation\Constraint\StrictValidAt;
+use Lcobucci\JWT\Validation\Constraint\ValidAt;
+use Lcobucci\JWT\Validation\RequiredConstraintsViolated;
 use League\Bundle\OAuth2ServerBundle\Security\Authentication\Token\OAuth2Token;
 use League\Bundle\OAuth2ServerBundle\Security\Exception\OAuth2AuthenticationException;
 use League\Bundle\OAuth2ServerBundle\Security\Exception\OAuth2AuthenticationFailedException;
 use League\Bundle\OAuth2ServerBundle\Security\Passport\Badge\ScopeBadge;
 use League\Bundle\OAuth2ServerBundle\Security\User\NullUser;
+use League\OAuth2\Server\AuthorizationValidators\BearerTokenValidator;
+use League\OAuth2\Server\CryptKey;
+use League\OAuth2\Server\Entities\AccessTokenEntityInterface;
 use League\OAuth2\Server\Exception\OAuthServerException;
+use League\OAuth2\Server\Repositories\AccessTokenRepositoryInterface;
 use League\OAuth2\Server\ResourceServer;
 use Symfony\Bridge\PsrHttpMessage\HttpMessageFactoryInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\KernelInterface;
 use Symfony\Component\Security\Core\Authentication\Token\TokenInterface;
 use Symfony\Component\Security\Core\Exception\AuthenticationException;
 use Symfony\Component\Security\Core\User\UserInterface;
@@ -51,25 +66,73 @@ final class OAuth2Authenticator implements AuthenticatorInterface, Authenticatio
      */
     private $userProvider;
 
+    private $authorizationValidator;
+
     /**
      * @var string
      */
     private $rolePrefix;
 
+    private $accessTokenRepo;
+
+    /**
+     * @var Configuration
+     */
+    private $jwtConfiguration;
+
     public function __construct(
         HttpMessageFactoryInterface $httpMessageFactory,
         ResourceServer $resourceServer,
         UserProviderInterface $userProvider,
-        string $rolePrefix
+        string $rolePrefix,
+        AccessTokenRepositoryInterface $accessTokenRepo,
+        KernelInterface $kernel
     ) {
         $this->httpMessageFactory = $httpMessageFactory;
         $this->resourceServer = $resourceServer;
         $this->userProvider = $userProvider;
         $this->rolePrefix = $rolePrefix;
+        $this->accessTokenRepo = $accessTokenRepo;
+        $this->kernel = $kernel;
     }
 
     public function supports(Request $request): ?bool
     {
+        $this->jwtConfiguration = Configuration::forSymmetricSigner(
+            new Sha256(),
+            InMemory::plainText('empty', 'empty')
+        );
+
+        $cryptKey = new CryptKey($this->kernel->getProjectDir() . '/config/keys/public.key');
+
+        $this->jwtConfiguration->setValidationConstraints(
+            \class_exists(StrictValidAt::class)
+                ? new StrictValidAt(new SystemClock(new \DateTimeZone(\date_default_timezone_get())))
+                : new ValidAt(new SystemClock(new \DateTimeZone(\date_default_timezone_get()))),
+            new SignedWith(
+                new Sha256(),
+                InMemory::plainText($cryptKey->getKeyContents(), $cryptKey->getPassPhrase() ?? '')
+            )
+        );
+
+        $header = $request->headers->get('Authorization', '');
+        $jwt = \trim((string) \preg_replace('/^\s*Bearer\s/', '', $header[0]));
+
+        try {
+            // Attempt to parse the JWT
+            $token = $this->jwtConfiguration->parser()->parse($jwt);
+        } catch (\Lcobucci\JWT\Exception $exception) {
+            return false;
+        }
+
+        try {
+            // Attempt to validate the JWT
+            $constraints = $this->jwtConfiguration->validationConstraints();
+            $this->jwtConfiguration->validator()->assert($token, ...$constraints);
+        } catch (RequiredConstraintsViolated $exception) {
+            return false;
+        }
+
         return 0 === strpos($request->headers->get('Authorization', ''), 'Bearer ');
     }
 
