@@ -42,7 +42,7 @@ use League\OAuth2\Server\Grant\AuthCodeGrant;
 use League\OAuth2\Server\Grant\ClientCredentialsGrant;
 use League\OAuth2\Server\Grant\ImplicitGrant;
 use League\OAuth2\Server\Grant\PasswordGrant;
-use League\OAuth2\Server\Grant\RefreshTokenGrant;
+use League\Bundle\OAuth2ServerBundle\Grant\RefreshTokenGrant;
 use League\OAuth2\Server\Repositories\AccessTokenRepositoryInterface;
 use League\OAuth2\Server\Repositories\AuthCodeRepositoryInterface;
 use League\OAuth2\Server\Repositories\ClientRepositoryInterface;
@@ -174,6 +174,7 @@ return static function (ContainerConfigurator $container): void {
         ->set('league.oauth2_server.grant.refresh_token', RefreshTokenGrant::class)
         ->args([
             service(RefreshTokenRepositoryInterface::class),
+            service(\Doctrine\ORM\EntityManagerInterface::class)
         ])
         ->alias(RefreshTokenGrant::class, 'league.oauth2_server.grant.refresh_token')
 
@@ -227,6 +228,7 @@ return static function (ContainerConfigurator $container): void {
             service('league.oauth2_server.factory.psr17'),
             service('event_dispatcher'),
         ])
+        ->public()
         ->tag('controller.service_arguments')
         ->alias(TokenController::class, 'league.oauth2_server.controller.token')
 
