@@ -116,7 +116,7 @@ final class OAuth2Authenticator implements AuthenticatorInterface, Authenticatio
         );
 
         $header = $request->headers->get('Authorization', '');
-        $jwt = \trim((string) \preg_replace('/^\s*Bearer\s/', '', $header[0]));
+        $jwt = \trim((string) \preg_replace('/^\s*Bearer\s/', '', $header));
 
         try {
             // Attempt to parse the JWT
